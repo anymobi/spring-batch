@@ -6,27 +6,69 @@
     성능 - 배치 어플리케이션은 지정한 시간 안에 처리를 완료하거나 동시에 실행되는 다른 어플리케이션을 방해하지 않도록 수행되어야합니다.
 
 . @EnableBatchProcessing
+
+. JobBuilderFactory
+    . jobBuilderFactory.get("simpleJob")
+
+. JobBuilder
+
 . Job
     . 하나의 배치 작업 단위
     . 여러 Step이 존재
+    . 지정한 Batch Job만 실행
+        . spring.batch.job.names: ${job.name:NONE} 
+            - Program arguments로 job.name 값이 넘어오면 해당 값과 일치하는 Job만 실행
+            - job.name이 있으면 job.name값을 할당하고, 없으면 NONE을 할당
+            - spring.batch.job.names에 NONE이 할당되면 어떤 배치도 실행하지 않겠다는 의미 즉, 값이 없을때 모든 배치가 실행되지 않도록 막는 역할
+        . 운영환경 : java -jar batch-application.jar --job.name=simpleJob    
+
+. StepBuilderFactory
+    . stepBuilderFactory.get("simpleStep1")
+
+. StepBuilder
+
 . Step
     . Tasklet 혹은 Reader & Processor & Writer 묶음이 존재
     . Tasklet 하나와 Reader & Processor & Writer 한 묶음이 같은 레벨
     . Reader & Processor가 끝나고 Tasklet으로 마무리 짓는 등으로 만들순 없다
     . 실제 Batch 작업을 수행하는 역할
+    . Batch로 실제 처리하고자 하는 기능과 설정을 모두 포함하는 장소
+
+    . Next
+        . 순차적으로 Step들 연결시킬때 사용
+        . 앞의 step에서 오류가 나면 나머지 뒤에 있는 step 들은 실행되지 못함
+
+. JobFlowBuilder
+. Flow
+        . 조건별 흐름 제어 즉, 조건별로 Step을 분기하여 사용할 수 있음
+        . 상황에 따라 정상일때는 Step B로, 오류가 났을때는 Step C로 수행해야할 때
+        .on()
+            - 캐치할 ExitStatus 지정
+            - * 일 경우 모든 ExitStatus가 지정된다.
+        to()
+            - 다음으로 이동할 Step 지정
+        from()
+            - 일종의 이벤트 리스너 역할
+            - 상태값을 보고 일치하는 상태라면 to()에 포함된 step을 호출합니다.
+            - step1의 이벤트 캐치가 FAILED로 되있는 상태에서 추가로 이벤트 캐치하려면 from을 써야만 함
+        end()
+            - end는 FlowBuilder를 반환하는 end와 FlowBuilder를 종료하는 end 2개가 있음
+            - on("*")뒤에 있는 end는 FlowBuilder를 반환하는 end
+            - build() 앞에 있는 end는 FlowBuilder를 종료하는 end
+            - FlowBuilder를 반환하는 end 사용시 계속해서 from을 이어갈 수 있음
+
 . Tasklet
     . Step안에서 단일로 수행될 커스텀한 기능들을 선언할때 사용
     . StepContribution
     . ChunkContext
-. RepeatStatus    
-. JobBuilderFactory
-    . jobBuilderFactory.get("simpleJob")
-. StepBuilderFactory
-    . stepBuilderFactory.get("simpleStep1")
+
+. RepeatStatus 
+
 .Job Parameter
     . Spring Batch가 실행될때 외부에서 받을 수 있는 파라미터
     . 특정 날짜를 Job Parameter로 넘기면 Spring Batch에서는 해당 날짜 데이터로 조회/가공/입력 등의 작업
-. @JobScope    
+
+. @JobScope   
 
 . Spring Batch의 메타 데이터
     이전에 실행한 Job이 어떤 것들이 있는지
@@ -38,6 +80,7 @@
             . JOB_INSTANCE_ID
                 BATCH_JOB_INSTANCE 테이블의 PK
             . JOB_NAME
+            
                 수행한 Batch Job Name
             . Job Parameter에 단위로  생성되는 테이블    
             . 같은 Batch Job 이라도 Job Parameter가 다르면 Batch_JOB_INSTANCE 에 기록되며, Job Parameter가 같다면 기록되지 않음
