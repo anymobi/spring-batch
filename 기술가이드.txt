@@ -7,10 +7,39 @@
 
 . @EnableBatchProcessing
 
+. BatchProperties
+
+. SimpleBatchConfiguration
+
+. AbstractBatchConfiguration
+
+. JobLauncherApplicationRunner
+    . DefaultJobParametersConverter
+        . JobParametersBuilder 를 생성하고 JobParameters 정보를 얻는다
+        . JobParametersBuilder propertiesBuilder = new JobParametersBuilder();
+    . executeLocalJobs(JobParameters jobParameters)    
+        . jobParameters 를 전달하고 Job 을 실행한다
+
 . JobBuilderFactory
     . jobBuilderFactory.get("simpleJob")
+        . SimpleJobBuilder or JobFlowBuilder 객체를 반환한다.
+    . JobBuilderHelper
+        . JobBuilder 
+            - start(), next() 의 유형에 따라 SimpleJobBuilder 와 FlowJobBuilder 를 생성하여 step, flow 를 실행하도록 한다
+            - CommonJobProperties 객체를 생성하고 SimpleJobBuilder 와 FlowJobBuilder 에서 사용하도록 한다
+            - SimpleJobBuilder 와 FlowJobBuilder 의 parent 역할을 한다
 
-. JobBuilder
+        . SimpleJobBuilder
+            . public Job build()
+                . Job 인스턴스인 SimpleJob 생성
+
+        . FlowJobBuilder
+            . public Job build()
+                . Job 인스턴스인 FlowJob 생성
+
+. FlowBuilder
+    . JobFlowBuilder  
+        . 실제로 Step 과 Flow 들을 실행시키는 빌더
 
 . Job
     . 하나의 배치 작업 단위
@@ -21,6 +50,11 @@
             - job.name이 있으면 job.name값을 할당하고, 없으면 NONE을 할당
             - spring.batch.job.names에 NONE이 할당되면 어떤 배치도 실행하지 않겠다는 의미 즉, 값이 없을때 모든 배치가 실행되지 않도록 막는 역할
         . 운영환경 : java -jar batch-application.jar --job.name=simpleJob    
+    . SimpleJob
+        . Job 의 구현체
+        . Job의 Step 들을 실행하고 관리함
+
+    . FlowJob        
 
 . StepBuilderFactory
     . stepBuilderFactory.get("simpleStep1")
@@ -38,7 +72,10 @@
         . 순차적으로 Step들 연결시킬때 사용
         . 앞의 step에서 오류가 나면 나머지 뒤에 있는 step 들은 실행되지 못함
 
-. JobFlowBuilder
+. State
+
+. JobRepository - Job,Step 등의 실행정보들을 DB 와 연동하기 위한 클래스
+
 . Flow
         . 조건별 흐름 제어 즉, 조건별로 Step을 분기하여 사용할 수 있음
         . 상황에 따라 정상일때는 Step B로, 오류가 났을때는 Step C로 수행해야할 때
@@ -64,9 +101,16 @@
 
 . RepeatStatus 
 
-.Job Parameter
+. JobParametersBuilder
+    . JobParameters 생성하고 Map<String, JobParameter> parameterMap 를 저장
+    . parameterMap 에는 JobParameter 를 저장
+        . new JobParameters(this.parameterMap)
+        . parameterMap.put(key, new JobParameter(value, identifying))
+. JobParameter
     . Spring Batch가 실행될때 외부에서 받을 수 있는 파라미터
-    . 특정 날짜를 Job Parameter로 넘기면 Spring Batch에서는 해당 날짜 데이터로 조회/가공/입력 등의 작업
+    . 특정 날짜를 Job Parameter로 넘기면 Spring Batch에서는 해당 날짜 데이터로 조회/가공/입력 등의 작업  
+
+. JobExecution    
 
 . @JobScope   
 
@@ -94,4 +138,8 @@
             . 최초 시도 시 성공하면 일대일 관계이고 최초 시도시 실패하면 일대다 관계로 기록된다
 
         . BATCH_JOB_EXECUTION_PARAM
-            .BATCH_JOB_EXECUTION 테이블이 생성될 당시에 입력 받은 Job Parameter를 담고 있음    
+            .BATCH_JOB_EXECUTION 테이블이 생성될 당시에 입력 받은 Job Parameter를 담고 있음
+
+. JobRepository
+
+. BatchStatus : STARTING, STARTED, STOPPING, STOPPED, FAILED, COMPLETED, ABANDONED
