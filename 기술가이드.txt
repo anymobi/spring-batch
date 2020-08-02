@@ -7,6 +7,18 @@
 
 . @EnableBatchProcessing
 
+. StepScope
+
+. JobScope
+
+. JobOperator > SimpleJobOperator
+
+. DefaultListableBeanFactory
+    . private final Map<String, Scope> scopes = new LinkedHashMap<>(8);
+    . public void registerScope(String scopeName, Scope scope) {
+        . this.scopes.put("step", StepScope);
+        . this.scopes.put("job", JopScope);
+
 . BatchProperties
 
 . SimpleBatchConfiguration
@@ -17,8 +29,63 @@
     . DefaultJobParametersConverter
         . JobParametersBuilder 를 생성하고 JobParameters 정보를 얻는다
         . JobParametersBuilder propertiesBuilder = new JobParametersBuilder();
-    . executeLocalJobs(JobParameters jobParameters)    
-        . jobParameters 를 전달하고 Job 을 실행한다
+    . executeLocalJobs(JobParameters jobParameters)
+        . execute(job, jobParameters);
+            . jobParameters 를 전달하고 Job 을 실행한다
+    . protected void execute(Job job, JobParameters jobParameters)
+        . JobParameters parameters = getNextJobParameters(job, jobParameters);            
+            . private JobParameters getNextJobParameters(Job job, JobParameters jobParameters)
+                . this.jobRepository.isJobInstanceExists(job.getName(), jobParameters))
+                    . job 이름과 jobParameter 를 인코딩한 키를 가지고 DB 에 저장된 JobInstance 가 있는지 확인
+                    . JobInstance 가 존재할 경우 getNextJobParametersForExisting(job, jobParameters) 호출
+            . private JobParameters getNextJobParametersForExisting(Job job, JobParameters jobParameters)
+                . JobExecution lastExecution = this.jobRepository.getLastJobExecution(job.getName(), jobParameters);
+                    . JobExecution 조회
+            . JobExecution getLastJobExecution(String jobName, JobParameters jobParameters)            
+                . JobInstance jobInstance = jobInstanceDao.getJobInstance(jobName, jobParameters)
+                . JobExecution jobExecution = jobExecutionDao.getLastJobExecution(jobInstance) 
+                    . Long id = jobInstance.getId();
+                    List<JobExecution> executions = getJdbcTemplate().query(getQuery(GET_LAST_EXECUTION),
+                    new JobExecutionRowMapper(jobInstance), id, id);
+
+                    . if (jobExecution != null) : jobInstance 이 null 아닐경우 마지막 jobExecution 를 조회
+                        jobExecution.setExecutionContext(ecDao.getExecutionContext(jobExecution)) : jobExecution 에 ExecutionContext 저장
+                        stepExecutionDao.addStepExecutions(jobExecution)
+                            . 각 StepExecution 마다 jobExecution을 저장하고 jobExecution 의 stepExecutions 에 각 StepExecution 들을 저장
+		. this.jobLauncher.run(job, parameters)
+            . JobExecution lastExecution = jobRepository.getLastJobExecution(job.getName(), jobParameters);
+            . job.getJobParametersValidator().validate(jobParameters): 파라미터 검증 - 필수값이나 옵션등이 지정되었는지 여부 확인하여 거짓이면 예외 발생
+            . jobExecution = jobRepository.createJobExecution(job.getName(), jobParameters) : 새로운 JobInstance 생성
+                . JobInstance jobInstance = jobInstanceDao.getJobInstance(jobName, jobParameters);
+                . if (jobInstance != null) {
+			        List<JobExecution> executions = jobExecutionDao.findJobExecutions(jobInstance);
+                        for (JobExecution execution : executions) {
+                            // 진행중이거나 중지중이면 예외
+                            if (execution.isRunning() || execution.isStopping()) {
+                                throw new JobExecutionAlreadyRunningException("A job execution for this job is already running: "
+                                        + jobInstance);
+                            }
+
+                            // UNKNOWN 이면 예외
+                            BatchStatus status = execution.getStatus();
+                            if (status == BatchStatus.UNKNOWN) {
+                                throw new JobRestartException("Cannot restart job from UNKNOWN status. "
+                                        + "The last execution ended with a failure that could not be rolled back, "
+                                        + "so it may be dangerous to proceed. Manual intervention is probably necessary.");
+                            }
+                            // COMPLETED 이거나 ABANDONED 이면 예외
+                            if (execution.getJobParameters().getParameters().size() > 0 && (status == BatchStatus.COMPLETED || status == BatchStatus.ABANDONED)) {
+                                throw new JobInstanceAlreadyCompleteException(
+                                        "A job instance already exists and is complete for parameters=" + jobParameters
+                                        + ".  If you want to run this job again, change the parameters.");
+                            }
+                        }
+. JobExecution
+
+. StepExecution
+
+. ExecutionContext
+    . 각 단계마다 다른 테이블을 사용하여 Step 및 Job 과 관련된 실행 컨텍스트 데이터를 저장
 
 . JobBuilderFactory
     . jobBuilderFactory.get("simpleJob")
@@ -143,3 +210,5 @@
 . JobRepository
 
 . BatchStatus : STARTING, STARTED, STOPPING, STOPPED, FAILED, COMPLETED, ABANDONED
+
+. JobExecutionDecider
