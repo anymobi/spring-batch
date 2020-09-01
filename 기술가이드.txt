@@ -5,11 +5,26 @@
     신뢰성 - 배치 어플리케이션은 무엇이 잘못되었는지를 추적할 수 있어야 합니다. (로깅, 알림)
     성능 - 배치 어플리케이션은 지정한 시간 안에 처리를 완료하거나 동시에 실행되는 다른 어플리케이션을 방해하지 않도록 수행되어야합니다.
 
+
+[ Batch 설정 및 초기화 ]
+
 . @EnableBatchProcessing
+
+. @JobScope, @StepScope
+    . 빈을 생성할 때 프록시 빈으로 생성된다
+    . ConfigurationClassEnhancer.BeanMethodInterceptor 에서 인터셉터해서 프록시 빈을 생성한다
+    . 프록시 빈으로 생성되면 Advide 가 작동해서 태스크를 실행하는 구조이다
 
 . StepScope
 
 . JobScope
+
+. BatchScopeSupport
+    . BeanFactoryPostProcessor 구현체
+    . JobScope, StepScope 부모
+    . beanFactory.registerScope(name, this) - JobScope, StepScope 를 scopes Map 에 등록한다
+        . 싱글톤 or 프로토타입 scope 가 아닌 "step", "job" scope 로 등록한다
+    . autoProxy = true, proxyTargetClass = false 가 기본값이다
 
 . JobOperator > SimpleJobOperator
 
@@ -21,9 +36,113 @@
 
 . BatchProperties
 
+. JobExecution
+
+. StepExecution
+
+. ExecutionContext
+    . 각 단계마다 다른 테이블을 사용하여 Step 및 Job 과 관련된 실행 컨텍스트 데이터를 저장
+
+. JobBuilderFactory
+    . jobBuilderFactory.get("simpleJob")
+        . SimpleJobBuilder or JobFlowBuilder 객체를 반환한다.
+    . JobBuilderHelper
+        . JobBuilder 
+            - start(), next() 의 유형에 따라 SimpleJobBuilder 와 FlowJobBuilder 를 생성하여 step, flow 를 실행하도록 한다            
+            - SimpleJobBuilder 와 FlowJobBuilder 의 parent 역할을 한다
+
+        . SimpleJobBuilder
+            .start(simpleStep1()) : simpleStep1() 은 StepBuilderFactory 참조
+                . 함수 실행 후 SimpleJobBuilder 반환
+                . steps(List) 에 step 추가
+            . public Job build()
+                . Job 인스턴스인 SimpleJob 생성, 설정, 반환
+                . super.enhance(job);
+                    . AbstractJob job = (AbstractJob) target;
+			        . job.setJobRepository(properties.getJobRepository());
+                        public void setJobRepository(JobRepository jobRepository) {
+                            this.jobRepository = jobRepository;
+                            stepHandler = new SimpleStepHandler(jobRepository);
+                        }
+                        . stepHandler = new SimpleStepHandler(jobRepository);
+                            . public SimpleStepHandler(JobRepository jobRepository, ExecutionContext executionContext) {
+                                this.jobRepository = jobRepository;
+                                this.executionContext = executionContext;
+                            }
+                . JobParametersIncrementer jobParametersIncrementer = properties.getJobParametersIncrementer();                            
+                . JobParametersValidator jobParametersValidator = properties.getJobParametersValidator();                            
+                . Boolean restartable = properties.getRestartable();
+                . List<JobExecutionListener> listeners = properties.getJobExecutionListeners();
+                    if (!listeners.isEmpty()) {
+                        job.setJobExecutionListeners(listeners.toArray(new JobExecutionListener[0]));
+                    }
+		        . job.setSteps(steps);
+                . job.afterPropertiesSet();
+
+        . FlowJobBuilder
+            . public Job build()
+                . Job 인스턴스인 FlowJob 생성
+        . CommonJobProperties 
+            . SimpleJobBuilder 와 FlowJobBuilder 에서 사용하도록 한다                
+
+. FlowBuilder
+    . JobFlowBuilder  
+        . 실제로 Step 과 Flow 들을 실행시키는 빌더
+
+. Job
+    . 하나의 배치 작업 단위
+    . 여러 Step이 존재
+    . 지정한 Batch Job만 실행
+        . spring.batch.job.names: ${job.name:NONE} 
+            - Program arguments로 job.name 값이 넘어오면 해당 값과 일치하는 Job만 실행
+            - job.name이 있으면 job.name값을 할당하고, 없으면 NONE을 할당
+            - spring.batch.job.names에 NONE이 할당되면 어떤 배치도 실행하지 않겠다는 의미 즉, 값이 없을때 모든 배치가 실행되지 않도록 막는 역할
+        . 운영환경 : java -jar batch-application.jar --job.name=simpleJob    
+    . SimpleJob
+        . Job 의 구현체
+        . Job의 Step 들을 실행하고 관리함
+
+    . FlowJob        
+
+. StepBuilderFactory
+    . stepBuilderFactory.get("simpleStep1")
+    . StepBuilderHelper
+        . StepBuilder
+            .tasklet(Tasklet tasklet) 호출
+        . TaskletStepBuilder
+            . tasklet(Tasklet tasklet) 이 호출되면 Tasklet 객체를 저장된다
+            . build()                    
+                . TaskletStep 객체 반환   
+                . registerStepListenerAsChunkListener 설정                 
+                . TaskletStep step = new TaskletStep(getName());
+                . super.enhance(step);
+                    . protected void enhance(Step target)
+                        . AbstractStep 공통속성, TaskletStep 속성 설정
+                . RepeatOperations 설정
+                    . RepeatOperations stepOperations = new RepeatTemplate();   
+                    . if (taskExecutor != null) {
+                            TaskExecutorRepeatTemplate repeatTemplate = new TaskExecutorRepeatTemplate();
+                            repeatTemplate.setTaskExecutor(taskExecutor);
+                            repeatTemplate.setThrottleLimit(throttleLimit);
+                            stepOperations = repeatTemplate;
+			            }
+                . step.setStepOperations(stepOperations);
+                . step.setTasklet(createTasklet())
+                . step.setStreams(streams.toArray(new ItemStream[0]));
+                    . Set<ItemStream> streams = new LinkedHashSet<>()        
+
+			((RepeatTemplate) stepOperations).setExceptionHandler(exceptionHandler);                     
+        . CommonStepProperties
+            . 초기화 때 StepBuilder 의 속성들이 저장된다
+
+[ Batch 실행 ]
+
 . SimpleBatchConfiguration
 
 . AbstractBatchConfiguration
+
+. public JobLauncherApplicationRunner jobLauncherApplicationRunner(JobLauncher jobLauncher, JobExplorer jobExplorer,
+    JobRepository jobRepository, BatchProperties properties)
 
 . JobLauncherApplicationRunner
     . DefaultJobParametersConverter
@@ -79,54 +198,7 @@
                                         "A job instance already exists and is complete for parameters=" + jobParameters
                                         + ".  If you want to run this job again, change the parameters.");
                             }
-                        }
-. JobExecution
-
-. StepExecution
-
-. ExecutionContext
-    . 각 단계마다 다른 테이블을 사용하여 Step 및 Job 과 관련된 실행 컨텍스트 데이터를 저장
-
-. JobBuilderFactory
-    . jobBuilderFactory.get("simpleJob")
-        . SimpleJobBuilder or JobFlowBuilder 객체를 반환한다.
-    . JobBuilderHelper
-        . JobBuilder 
-            - start(), next() 의 유형에 따라 SimpleJobBuilder 와 FlowJobBuilder 를 생성하여 step, flow 를 실행하도록 한다
-            - CommonJobProperties 객체를 생성하고 SimpleJobBuilder 와 FlowJobBuilder 에서 사용하도록 한다
-            - SimpleJobBuilder 와 FlowJobBuilder 의 parent 역할을 한다
-
-        . SimpleJobBuilder
-            . public Job build()
-                . Job 인스턴스인 SimpleJob 생성
-
-        . FlowJobBuilder
-            . public Job build()
-                . Job 인스턴스인 FlowJob 생성
-
-. FlowBuilder
-    . JobFlowBuilder  
-        . 실제로 Step 과 Flow 들을 실행시키는 빌더
-
-. Job
-    . 하나의 배치 작업 단위
-    . 여러 Step이 존재
-    . 지정한 Batch Job만 실행
-        . spring.batch.job.names: ${job.name:NONE} 
-            - Program arguments로 job.name 값이 넘어오면 해당 값과 일치하는 Job만 실행
-            - job.name이 있으면 job.name값을 할당하고, 없으면 NONE을 할당
-            - spring.batch.job.names에 NONE이 할당되면 어떤 배치도 실행하지 않겠다는 의미 즉, 값이 없을때 모든 배치가 실행되지 않도록 막는 역할
-        . 운영환경 : java -jar batch-application.jar --job.name=simpleJob    
-    . SimpleJob
-        . Job 의 구현체
-        . Job의 Step 들을 실행하고 관리함
-
-    . FlowJob        
-
-. StepBuilderFactory
-    . stepBuilderFactory.get("simpleStep1")
-
-. StepBuilder
+                        }            
 
 . Step
     . Tasklet 혹은 Reader & Processor & Writer 묶음이 존재
